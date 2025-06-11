@@ -1112,15 +1112,18 @@ def menu_profil_seller(seller_id):
         print("\n===== Menu Profil =====")
         print("1. Lihat Profil")
         print("2. Edit Profil")
-        print("3. Kembali")
+        print("3. Lihat & Balas Review")
+        print("4. Kembali")
 
-        pilihan = input("Pilih menu (1-3): ")
+        pilihan = input("Pilih menu (1-4): ")
 
         if pilihan == '1':
             lihat_profil(seller_id, 'seller')
         elif pilihan == '2':
             edit_profil(seller_id, 'seller')
         elif pilihan == '3':
+            balas_review(seller_id)
+        elif pilihan == '4':
             break
         else:
             print("❌ Pilihan tidak valid!")
@@ -2044,6 +2047,143 @@ def menu_wishlist(user_id):
             break
         else:
             print("❌ Pilihan tidak valid!")
+
+# Balas Review (untuk seller)
+def balas_review(seller_id):
+    connection = None
+    cursor = None
+    try:
+        # Get seller info from MySQL
+        connection = create_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get seller's store name
+        cursor.execute("""
+            SELECT s.*, u.name as seller_name
+            FROM seller s
+            JOIN users u ON u.seller_id = s.seller_id
+            WHERE s.seller_id = %s
+        """, (seller_id,))
+        seller = cursor.fetchone()
+        if not seller:
+            print("❌ Seller tidak ditemukan!")
+            return
+            
+        # Get seller's products
+        cursor.execute("""
+            SELECT product_id, name 
+            FROM products 
+            WHERE seller_id = %s
+        """, (seller_id,))
+        products = cursor.fetchall()
+        
+        if not products:
+            print("❌ Anda belum memiliki produk!")
+            return
+            
+        # Get MongoDB connection
+        db = create_mongo_connection()
+        if not db:
+            return
+            
+        # Get all reviews for seller's products
+        product_ids = [p['product_id'] for p in products]
+        reviews = list(db.Review.find({"product_id": {"$in": product_ids}}).sort("created_at", -1))
+        
+        if not reviews:
+            print("❌ Belum ada review untuk produk Anda!")
+            return
+            
+        # Show all reviews
+        print("\n📝 Daftar Review Produk Anda:")
+        for i, review in enumerate(reviews, 1):
+            print(f"\n{i}. Produk: {review['product_name']}")
+            print(f"   Dari: {review['user_name']}")
+            print(f"   Rating: {'⭐' * review['rating']}")
+            print(f"   Komentar: {review['comment']}")
+            print(f"   Tanggal: {review['created_at'].strftime('%d-%m-%Y %H:%M')}")
+            
+            if review.get('replies'):
+                print("   Balasan:")
+                for reply in review['replies']:
+                    print(f"   - {reply['user_name']}: {reply['comment']}")
+            print("-" * 40)
+            
+        # Select review to reply
+        try:
+            choice = int(input("\nPilih nomor review yang ingin dibalas (0 untuk batal): "))
+            if choice == 0:
+                return
+            if choice < 1 or choice > len(reviews):
+                print("❌ Pilihan tidak valid!")
+                return
+        except ValueError:
+            print("❌ Pilihan harus berupa angka!")
+            return
+            
+        selected_review = reviews[choice - 1]
+        
+        # Check if seller has already replied
+        seller_replies = [r for r in selected_review.get('replies', []) 
+                         if r['user_name'] == seller['store_name']]
+        if seller_replies:
+            print("\nAnda sudah membalas review ini:")
+            for reply in seller_replies:
+                print(f"- {reply['comment']}")
+            
+            edit = input("\nIngin mengedit balasan? (y/n): ")
+            if edit.lower() != 'y':
+                return
+        
+        # Get reply
+        reply = input("\nTulis balasan Anda: ")
+        if not reply.strip():
+            print("❌ Balasan tidak boleh kosong!")
+            return
+            
+        # Add reply to review
+        new_reply = {
+            "user_name": seller['store_name'],
+            "comment": reply,
+            "created_at": datetime.now()
+        }
+        
+        if seller_replies:
+            # Update existing reply
+            db.Review.update_one(
+                {
+                    "_id": selected_review["_id"],
+                    "replies.user_name": seller['store_name']
+                },
+                {
+                    "$set": {
+                        "replies.$.comment": reply,
+                        "replies.$.created_at": datetime.now()
+                    }
+                }
+            )
+        else:
+            # Add new reply
+            db.Review.update_one(
+                {"_id": selected_review["_id"]},
+                {"$push": {"replies": new_reply}}
+            )
+        
+        print("\n✅ Balasan berhasil ditambahkan!")
+        print("\nReview dengan balasan:")
+        print(f"Produk: {selected_review['product_name']}")
+        print(f"Dari: {selected_review['user_name']}")
+        print(f"Rating: {'⭐' * selected_review['rating']}")
+        print(f"Komentar: {selected_review['comment']}")
+        print(f"Balasan Anda: {reply}")
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
 
 # Jalankan program
 if __name__ == "__main__":
