@@ -1,32 +1,134 @@
-[{
-  "_id": {
-    "$oid": "6848e5277e934d157cc3784e"
+[
+  {
+    "user_id": 1,
+    "user_name": "Halo",
+    "product_id": 3,
+    "product_name": "adiadi",
+    "rating": 4,
+    "comment": "Bagus",
+    "created_at": { "$date": "2025-06-11T09:08:39.550Z" },
+    "likes": 0,
+    "replies": [
+      {
+        "user_name": "admin_store",
+        "comment": "Terima kasih sudah berbelanja!",
+        "created_at": { "$date": "2025-06-11T09:10:00.000Z" }
+      }
+    ],
+    "qna": []
   },
-  "user_id": 1,
-  "user_name": "Halo",
-  "product_id": 3,
-  "product_name": "adiadi",
-  "rating": 4,
-  "comment": "Bagus",
-  "created_at": {
-    "$date": "2025-06-11T09:08:39.550Z"
+  {
+    "user_id": 3,
+    "user_name": "adada",
+    "product_id": 3,
+    "product_name": "adiadi",
+    "rating": 2,
+    "comment": "ddsd",
+    "created_at": { "$date": "2025-06-11T09:21:38.622Z" },
+    "likes": 0,
+    "replies": [],
+    "qna": []
   },
-  "likes": 0,
-  "replies": []
-},
-{
-  "_id": {
-    "$oid": "6848e832bd1abe61f7f6e3fb"
+  {
+    "user_id": 4,
+    "user_name": "budi",
+    "product_id": 2,
+    "product_name": "Laptop UltraThin Z14",
+    "rating": 5,
+    "comment": "Performa sangat bagus dan ringan!",
+    "created_at": { "$date": "2025-06-11T10:01:00.000Z" },
+    "likes": 2,
+    "replies": [
+      {
+        "user_name": "admin_z14",
+        "comment": "Senang mendengar kamu puas dengan produk ini!",
+        "created_at": { "$date": "2025-06-11T10:06:00.000Z" }
+      }
+    ],
+    "qna": [
+      {
+        "question": "Apakah bisa upgrade RAM?",
+        "user_name": "nina",
+        "created_at": { "$date": "2025-06-11T11:00:00.000Z" },
+        "answers": [
+          {
+            "user_name": "admin_z14",
+            "answer": "Bisa, maksimal upgrade hingga 32GB.",
+            "created_at": { "$date": "2025-06-11T11:05:00.000Z" }
+          },
+          {
+            "user_name": "akmal",
+            "answer": "Saya sudah upgrade ke 16GB dan lancar!",
+            "created_at": { "$date": "2025-06-11T11:08:00.000Z" }
+          }
+        ]
+      }
+    ]
   },
-  "user_id": 3,
-  "user_name": "adada",
-  "product_id": 3,
-  "product_name": "adiadi",
-  "rating": 2,
-  "comment": "ddsd",
-  "created_at": {
-    "$date": "2025-06-11T09:21:38.622Z"
+  {
+    "user_id": 5,
+    "user_name": "sari",
+    "product_id": 1,
+    "product_name": "Sepatu Sneakers XY",
+    "rating": 3,
+    "comment": "Nyaman tapi sol-nya agak keras.",
+    "created_at": { "$date": "2025-06-11T10:30:00.000Z" },
+    "likes": 1,
+    "replies": [],
+    "qna": [
+      {
+        "question": "Apakah sepatu ini waterproof?",
+        "user_name": "doni",
+        "created_at": { "$date": "2025-06-11T10:15:00.000Z" },
+        "answers": [
+          {
+            "user_name": "admin_xy",
+            "answer": "Tidak waterproof, tapi tahan cipratan air ringan.",
+            "created_at": { "$date": "2025-06-11T10:20:00.000Z" }
+          },
+          {
+            "user_name": "lisa",
+            "answer": "Aku pernah pakai saat hujan ringan, aman sih.",
+            "created_at": { "$date": "2025-06-11T10:22:00.000Z" }
+          }
+        ]
+      }
+    ]
   },
-  "likes": 0,
-  "replies": []
-}]
+  {
+    "user_id": 6,
+    "user_name": "agus",
+    "product_id": 3,
+    "product_name": "adiadi",
+    "rating": 5,
+    "comment": "Barang sampai cepat dan sesuai deskripsi.",
+    "created_at": { "$date": "2025-06-11T11:00:00.000Z" },
+    "likes": 3,
+    "replies": [
+      {
+        "user_name": "admin_store",
+        "comment": "Semoga bermanfaat! 😊",
+        "created_at": { "$date": "2025-06-11T11:12:00.000Z" }
+      }
+    ],
+    "qna": [
+      {
+        "question": "Berapa lama estimasi pengiriman ke Bandung?",
+        "user_name": "zaky",
+        "created_at": { "$date": "2025-06-11T12:00:00.000Z" },
+        "answers": [
+          {
+            "user_name": "admin_store",
+            "answer": "Biasanya sekitar 2-3 hari kerja.",
+            "created_at": { "$date": "2025-06-11T12:10:00.000Z" }
+          },
+          {
+            "user_name": "naufal",
+            "answer": "Saya kemarin 2 hari sampai!",
+            "created_at": { "$date": "2025-06-11T12:15:00.000Z" }
+          }
+        ]
+      }
+    ]
+  }
+]
