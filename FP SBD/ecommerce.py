@@ -43,19 +43,77 @@ def register_user():
 
     # Common information for both roles
     name = input("Masukkan Nama: ")
-    email = input("Masukkan Email: ")
+    
+    # Username validation
+    while True:
+        username = input("Masukkan Username: ")
+        if not username.strip():
+            print("❌ Username tidak boleh kosong!")
+            continue
+            
+        try:
+            connection = create_connection()
+            cursor = connection.cursor()
+            
+            # Check if username already exists
+            cursor.execute("SELECT username FROM users WHERE username = %s", (username,))
+            if cursor.fetchone():
+                print("❌ Username sudah digunakan. Pilih username lain.")
+                continue
+            break
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            if 'connection' in locals():
+                cursor.close()
+                connection.close()
+            continue
+    
+    # Email validation
+    while True:
+        email = input("Masukkan Email: ")
+        if not email.strip():
+            print("❌ Email tidak boleh kosong!")
+            continue
+            
+        if "@" not in email:
+            print("❌ Email tidak sesuai format!")
+            continue
+            
+        try:
+            connection = create_connection()
+            cursor = connection.cursor()
+            
+            # Check if email already exists
+            cursor.execute("SELECT email FROM users WHERE email = %s", (email,))
+            if cursor.fetchone():
+                print("❌ Email sudah terdaftar. Gunakan email lain.")
+                continue
+            break
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            if 'connection' in locals():
+                cursor.close()
+                connection.close()
+            continue
+    
     password = input("Masukkan Password: ")
-    phone_number = input("Masukkan Nomor Telepon: ")
+    
+    # Phone number validation
+    while True:
+        phone_number = input("Masukkan Nomor Telepon: ")
+        if not phone_number.strip():
+            print("❌ Nomor telepon tidak boleh kosong!")
+            continue
+            
+        if not phone_number.isdigit():
+            print("❌ Nomor telepon hanya boleh berisi angka!")
+            continue
+            
+        break
 
     try:
         connection = create_connection()
         cursor = connection.cursor()
-
-        # Check if email already exists in users table
-        cursor.execute("SELECT email FROM users WHERE email = %s", (email,))
-        if cursor.fetchone():
-            print("❌ Email sudah terdaftar. Gunakan email lain.")
-            return
 
         if role == 'customer':
             # Get customer address
@@ -73,9 +131,9 @@ def register_user():
             
             # Insert into users table with customer_id
             cursor.execute("""
-                INSERT INTO users (role, name, phone_number, email, password, customer_id) 
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (role, name, phone_number, email, password, customer_id))
+                INSERT INTO users (role, name, username, phone_number, email, password, customer_id) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (role, name, username, phone_number, email, password, customer_id))
             
         else:  # seller
             # Get store information
@@ -88,15 +146,15 @@ def register_user():
                 VALUES (%s, %s)
             """, (store_name, store_address))
             connection.commit()
-            
+
             # Get the seller_id
             seller_id = cursor.lastrowid
             
             # Insert into users table with seller_id
             cursor.execute("""
-                INSERT INTO users (role, name, phone_number, email, password, seller_id) 
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (role, name, phone_number, email, password, seller_id))
+                INSERT INTO users (role, name, username, phone_number, email, password, seller_id) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (role, name, username, phone_number, email, password, seller_id))
         
         connection.commit()
         print("✅ Registrasi berhasil! Silakan login.")
@@ -110,7 +168,23 @@ def register_user():
 
 # LOGIN - Autentikasi User
 def login_user():
-    email = input("Masukkan Email: ")
+    print("\nPilih metode login:")
+    print("1. Login dengan Email")
+    print("2. Login dengan Username")
+    
+    while True:
+        login_method = input("Pilih metode (1/2): ")
+        if login_method in ['1', '2']:
+            break
+        print("❌ Pilihan tidak valid!")
+    
+    if login_method == '1':
+        identifier = input("Masukkan Email: ")
+        identifier_field = "email"
+    else:
+        identifier = input("Masukkan Username: ")
+        identifier_field = "username"
+        
     password = input("Masukkan Password: ")
 
     try:
@@ -118,21 +192,22 @@ def login_user():
         cursor = connection.cursor(dictionary=True)
 
         # Get user from users table
-        query = """
-            SELECT u.user_id, u.name, u.email, u.phone_number, u.role,
+        query = f"""
+            SELECT u.user_id, u.name, u.email, u.username, u.phone_number, u.role,
                    COALESCE(c.address, s.store_address) as address,
                    c.customer_id, s.seller_id
             FROM users u
             LEFT JOIN customer c ON u.customer_id = c.customer_id
             LEFT JOIN seller s ON u.seller_id = s.seller_id
-            WHERE u.email = %s AND u.password = %s
+            WHERE u.{identifier_field} = %s AND u.password = %s
         """
-        cursor.execute(query, (email, password))
+        cursor.execute(query, (identifier, password))
         user = cursor.fetchone()
 
         if user:
             print(f"\n✅ Login berhasil! Selamat datang, {user['name']}")
             print(f"Email: {user['email']}")
+            print(f"Username: {user['username']}")
             print(f"No. Telepon: {user['phone_number']}")
             print(f"Alamat: {user['address']}")
             
@@ -140,7 +215,10 @@ def login_user():
             user_id = user['customer_id'] if user['role'] == 'customer' else user['seller_id']
             return user_id, user['name'], user['role']
         else:
-            print("❌ Email atau password salah!")
+            if login_method == '1':
+                print("❌ Email atau password salah!")
+            else:
+                print("❌ Username atau password salah!")
 
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -173,6 +251,18 @@ def tampilkan_kategori():
 # CREATE - Tambah Produk
 def tambah_produk(seller_id):
     try:
+        # Check if there are any categories available first
+        connection = create_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        cursor.execute("SELECT COUNT(*) as category_count FROM categories")
+        result = cursor.fetchone()
+        
+        if result['category_count'] == 0:
+            print("\n❌ Tidak dapat menambahkan produk karena belum ada kategori!")
+            print("ℹ️ Silakan tambahkan kategori terlebih dahulu melalui Menu Kategori.")
+            return
+            
         # Show categories first
         print("\nKategori yang tersedia:")
         tampilkan_kategori()
@@ -203,9 +293,6 @@ def tambah_produk(seller_id):
                 print("❌ Stok harus berupa angka!")
         
         # Validate category input
-        connection = create_connection()
-        cursor = connection.cursor()
-        
         while True:
             try:
                 kategori_id = int(input("Masukkan kategori ID: "))
@@ -1122,7 +1209,7 @@ def menu_profil_seller(seller_id):
         elif pilihan == '2':
             edit_profil(seller_id, 'seller')
         elif pilihan == '3':
-            balas_review(seller_id)
+            menu_review_seller(seller_id)
         elif pilihan == '4':
             break
         else:
@@ -1234,27 +1321,105 @@ def menu_payment(seller_id):
         else:
             print("❌ Pilihan tidak valid!")
 
+# Menu Review Seller
+def menu_review_seller(seller_id):
+    while True:
+        print("\n===== Menu Review =====")
+        print("1. Lihat Semua Review Produk")
+        print("2. Balas Review")
+        print("3. Kembali")
+
+        pilihan = input("Pilih menu (1-3): ")
+
+        if pilihan == '1':
+            lihat_review_produk_seller(seller_id)
+        elif pilihan == '2':
+            balas_review(seller_id)
+        elif pilihan == '3':
+            break
+        else:
+            print("❌ Pilihan tidak valid!")
+
+def lihat_review_produk_seller(seller_id):
+    connection = None
+    cursor = None
+    try:
+        # Get seller info from MySQL
+        connection = create_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get seller's products
+        cursor.execute("""
+            SELECT product_id, name 
+            FROM products 
+            WHERE seller_id = %s
+        """, (seller_id,))
+        products = cursor.fetchall()
+        
+        if not products:
+            print("❌ Anda belum memiliki produk!")
+            return
+            
+        # Get MongoDB connection
+        db = create_mongo_connection()
+        if not db:
+            return
+            
+        # Get all reviews for seller's products
+        product_ids = [p['product_id'] for p in products]
+        reviews = list(db.Review.find({"product_id": {"$in": product_ids}}).sort("created_at", -1))
+        
+        if not reviews:
+            print("❌ Belum ada review untuk produk Anda!")
+            return
+            
+        # Show all reviews
+        print("\n📝 Daftar Review Produk Anda:")
+        for i, review in enumerate(reviews, 1):
+            print(f"\n{i}. Produk: {review['product_name']}")
+            print(f"   Dari: {review['user_name']}")
+            print(f"   Rating: {'⭐' * review['rating']}")
+            print(f"   Komentar: {review['comment']}")
+            print(f"   Tanggal: {review['created_at'].strftime('%d-%m-%Y %H:%M')}")
+            
+            if review.get('replies'):
+                print("   Balasan:")
+                for reply in review['replies']:
+                    print(f"   - {reply['user_name']}: {reply['comment']}")
+            print("-" * 40)
+            
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
 # Menu Seller
 def menu_seller(user_id):
     while True:
         print("\n===== MENU UTAMA SELLER =====")
         print("1. Menu Produk")
         print("2. Menu Kategori")
-        print("3. Menu Payment")
-        print("4. Menu Profil")
-        print("5. Logout")
+        print("3. Menu Profil")
+        print("4. Menu Review")
+        print("5. Menu Promo")
+        print("6. Logout")
 
-        pilihan = input("Pilih menu (1-5): ")
+        pilihan = input("Pilih menu (1-6): ")
 
         if pilihan == '1':
             menu_produk_seller(user_id)
         elif pilihan == '2':
             menu_kategori()
         elif pilihan == '3':
-            menu_payment(user_id)
-        elif pilihan == '4':
             menu_profil_seller(user_id)
+        elif pilihan == '4':
+            menu_review_seller(user_id)
         elif pilihan == '5':
+            menu_promo_seller(user_id)
+        elif pilihan == '6':
             print("🔒 Logout berhasil.\n")
             break
         else:
@@ -1353,7 +1518,12 @@ def tambah_review(user_id):
             
         # Show products and get product ID
         tampilkan_produk()
-        product_id = int(input("\nMasukkan ID produk yang ingin direview: "))
+        
+        try:
+            product_id = int(input("\nMasukkan ID produk yang ingin direview: "))
+        except ValueError:
+            print("❌ ID produk harus berupa angka!")
+            return
             
         # Check if product exists
         cursor.execute("""
@@ -1413,7 +1583,6 @@ def tambah_review(user_id):
             "rating": rating,
             "comment": comment,
             "created_at": datetime.now(),
-            "likes": 0,
             "replies": [],
             "qna": []
         }
@@ -1470,14 +1639,13 @@ def lihat_review_saya(user_id):
         if not reviews:
             print("\nAnda belum memberikan review apapun.")
             return
-            
+        
         print("\n📝 Review Saya:")
         for review in reviews:
             print(f"\nProduk: {review['product_name']}")
             print(f"Rating: {'⭐' * review['rating']}")
             print(f"Komentar: {review['comment']}")
             print(f"Tanggal: {review['created_at'].strftime('%d-%m-%Y %H:%M')}")
-            print(f"Likes: {review['likes']}")
             
             if review.get("replies"):
                 print("\nBalasan:")
@@ -1679,9 +1847,6 @@ def menu_review(user_id):
         if pilihan == '1':
             lihat_review_saya(user_id)
         elif pilihan == '2':
-            # Show products first
-            tampilkan_produk()
-            product_id = int(input("\nMasukkan ID produk yang ingin direview: "))
             tambah_review(user_id)
         elif pilihan == '3':
             edit_review(user_id)
@@ -2184,6 +2349,453 @@ def balas_review(seller_id):
             cursor.close()
         if connection:
             connection.close()
+
+# Tambah Promo/Diskon
+def tambah_promo(seller_id):
+    try:
+        connection = create_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get seller's products
+        cursor.execute("""
+            SELECT product_id, name, price 
+            FROM products 
+            WHERE seller_id = %s
+        """, (seller_id,))
+        products = cursor.fetchall()
+        
+        if not products:
+            print("❌ Anda belum memiliki produk!")
+            return
+            
+        print("\n📦 Daftar Produk Anda:")
+        for product in products:
+            print(f"ID: {product['product_id']} - {product['name']} (Rp {product['price']:,.2f})")
+            
+        try:
+            product_id = int(input("\nMasukkan ID produk untuk diskon: "))
+            # Verify product belongs to seller
+            product = next((p for p in products if p['product_id'] == product_id), None)
+            if not product:
+                print("❌ Produk tidak ditemukan atau bukan milik Anda!")
+                return
+        except ValueError:
+            print("❌ ID produk harus berupa angka!")
+            return
+                
+        while True:
+            try:
+                discount = float(input("Masukkan persentase diskon (1-100): "))
+                if 0 < discount <= 100:
+                    break
+                print("❌ Persentase harus antara 1-100!")
+            except ValueError:
+                print("❌ Masukkan angka yang valid!")
+                    
+        # Set validity period
+        print("\nMasa Berlaku Diskon:")
+        start_date = input("Tanggal mulai (YYYY-MM-DD): ")
+        end_date = input("Tanggal berakhir (YYYY-MM-DD): ")
+        
+        # Insert discount
+        cursor.execute("""
+            INSERT INTO discounts (product_id, discount_percentage, start_date, end_date)
+            VALUES (%s, %s, %s, %s)
+        """, (product_id, discount, start_date, end_date))
+        
+        connection.commit()
+        print("\n✅ Diskon berhasil ditambahkan!")
+        print(f"Produk: {product['name']}")
+        print(f"Diskon: {discount}%")
+        print(f"Periode: {start_date} s/d {end_date}")
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        if 'connection' in locals():
+            connection.rollback()
+    finally:
+        if 'connection' in locals():
+            cursor.close()
+            connection.close()
+
+# Lihat Promo/Diskon (Seller)
+def lihat_promo_seller(seller_id):
+    try:
+        connection = create_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get seller's active discounts
+        cursor.execute("""
+            SELECT d.*, p.name as product_name, p.price as original_price
+            FROM discounts d
+            JOIN products p ON d.product_id = p.product_id
+            WHERE p.seller_id = %s AND d.end_date >= CURDATE()
+            ORDER BY d.start_date
+        """, (seller_id,))
+        discounts = cursor.fetchall()
+        
+        if not discounts:
+            print("❌ Tidak ada diskon aktif!")
+            return
+            
+        print("\n🏷️ Daftar Diskon Aktif:")
+        for discount in discounts:
+            print(f"\nProduk: {discount['product_name']}")
+            print(f"Diskon: {discount['discount_percentage']}%")
+            print(f"Periode: {discount['start_date']} s/d {discount['end_date']}")
+            
+            # Calculate discounted price
+            final_price = discount['original_price'] * (1 - discount['discount_percentage']/100)
+            print(f"Harga Asli: Rp {discount['original_price']:,.2f}")
+            print(f"Harga Setelah Diskon: Rp {final_price:,.2f}")
+            print("-" * 40)
+            
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    finally:
+        if 'connection' in locals():
+            cursor.close()
+            connection.close()
+
+# Hapus Promo/Diskon
+def hapus_promo(seller_id):
+    try:
+        connection = create_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get seller's active discounts
+        cursor.execute("""
+            SELECT d.discount_id, d.discount_percentage, p.name as product_name
+            FROM discounts d
+            JOIN products p ON d.product_id = p.product_id
+            WHERE p.seller_id = %s AND d.end_date >= CURDATE()
+            ORDER BY d.start_date
+        """, (seller_id,))
+        discounts = cursor.fetchall()
+        
+        if not discounts:
+            print("❌ Tidak ada diskon aktif yang bisa dihapus!")
+            return
+            
+        print("\n🏷️ Daftar Diskon Aktif:")
+        for discount in discounts:
+            print(f"ID: {discount['discount_id']} - {discount['product_name']} (Diskon {discount['discount_percentage']}%)")
+            
+        try:
+            discount_id = int(input("\nMasukkan ID diskon yang ingin dihapus: "))
+            
+            # Verify discount belongs to seller's product
+            cursor.execute("""
+                SELECT d.* 
+                FROM discounts d
+                JOIN products p ON d.product_id = p.product_id
+                WHERE d.discount_id = %s AND p.seller_id = %s
+            """, (discount_id, seller_id))
+            
+            if not cursor.fetchone():
+                print("❌ Diskon tidak ditemukan atau bukan milik Anda!")
+                return
+                
+            # Delete discount
+            cursor.execute("DELETE FROM discounts WHERE discount_id = %s", (discount_id,))
+            connection.commit()
+            
+            print("✅ Diskon berhasil dihapus!")
+            
+        except ValueError:
+            print("❌ ID diskon harus berupa angka!")
+            return
+            
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        if 'connection' in locals():
+            connection.rollback()
+    finally:
+        if 'connection' in locals():
+            cursor.close()
+            connection.close()
+
+# Menu Promo (Seller)
+def menu_promo_seller(seller_id):
+    while True:
+        print("\n===== Menu Promo & Diskon =====")
+        print("1. Lihat Diskon Aktif")
+        print("2. Tambah Diskon")
+        print("3. Hapus Diskon")
+        print("4. Kembali")
+
+        pilihan = input("Pilih menu (1-4): ")
+
+        if pilihan == '1':
+            lihat_promo_seller(seller_id)
+        elif pilihan == '2':
+            tambah_promo(seller_id)
+        elif pilihan == '3':
+            hapus_promo(seller_id)
+        elif pilihan == '4':
+            break
+        else:
+            print("❌ Pilihan tidak valid!")
+
+# Lihat Promo (Customer)
+def lihat_promo():
+    try:
+        connection = create_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get all active discounts
+        cursor.execute("""
+            SELECT d.*, p.name as product_name, p.price as original_price,
+                   s.store_name
+            FROM discounts d
+            JOIN products p ON d.product_id = p.product_id
+            JOIN seller s ON p.seller_id = s.seller_id
+            WHERE d.end_date >= CURDATE()
+            ORDER BY d.start_date
+        """)
+        discounts = cursor.fetchall()
+        
+        if not discounts:
+            print("❌ Tidak ada diskon aktif saat ini!")
+            return
+            
+        print("\n🏷️ Daftar Diskon Aktif:")
+        for discount in discounts:
+            print(f"\nProduk: {discount['product_name']}")
+            print(f"Toko: {discount['store_name']}")
+            print(f"Diskon: {discount['discount_percentage']}%")
+            print(f"Periode: {discount['start_date']} s/d {discount['end_date']}")
+            
+            # Calculate discounted price
+            final_price = discount['original_price'] * (1 - discount['discount_percentage']/100)
+            print(f"Harga Asli: Rp {discount['original_price']:,.2f}")
+            print(f"Harga Setelah Diskon: Rp {final_price:,.2f}")
+            print(f"Hemat: Rp {(discount['original_price'] - final_price):,.2f}")
+            print("-" * 40)
+            
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    finally:
+        if 'connection' in locals():
+            cursor.close()
+            connection.close()
+
+# Update checkout_trolley to include discounts
+def checkout_trolley(user_id):
+    try:
+        connection = create_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get items in trolley with product details and active discounts
+        cursor.execute("""
+            SELECT t.*, p.name, p.price, p.stock, s.store_name,
+                   d.discount_id, d.discount_percentage
+            FROM trolley t
+            JOIN products p ON t.product_id = p.product_id
+            JOIN seller s ON p.seller_id = s.seller_id
+            LEFT JOIN discounts d ON p.product_id = d.product_id 
+                AND CURDATE() BETWEEN d.start_date AND d.end_date
+            WHERE t.user_id = %s
+        """, (user_id,))
+        items = cursor.fetchall()
+        
+        if not items:
+            print("❌ Trolley kosong!")
+            return
+            
+        # Group items by seller
+        sellers = {}
+        for item in items:
+            if item['store_name'] not in sellers:
+                sellers[item['store_name']] = []
+            sellers[item['store_name']].append(item)
+            
+        # Display items and calculate total
+        print("\n🛒 Checkout Trolley:")
+        total_price = 0
+        total_discount = 0
+        
+        for store_name, store_items in sellers.items():
+            print(f"\n📍 Toko: {store_name}")
+            store_total = 0
+            
+            for item in store_items:
+                # Check stock
+                if item['quantity'] > item['stock']:
+                    print(f"❌ Stok {item['name']} tidak mencukupi!")
+                    return
+                    
+                # Calculate price with discount if available
+                item_price = item['price'] * item['quantity']
+                discounted_price = item_price
+                
+                if item['discount_id']:
+                    discount = item_price * (item['discount_percentage'] / 100)
+                    discounted_price = item_price - discount
+                    
+                    print(f"\n{item['name']} ({item['quantity']}x)")
+                    print(f"Harga Asli: Rp {item_price:,.2f}")
+                    print(f"Diskon: {item['discount_percentage']}%")
+                    print(f"Harga Setelah Diskon: Rp {discounted_price:,.2f}")
+                    print(f"Hemat: Rp {(item_price - discounted_price):,.2f}")
+                else:
+                    print(f"\n{item['name']} ({item['quantity']}x)")
+                    print(f"Harga: Rp {item_price:,.2f}")
+                
+                store_total += discounted_price
+                total_discount += (item_price - discounted_price)
+                
+            print(f"\nSubtotal {store_name}: Rp {store_total:,.2f}")
+            total_price += store_total
+            
+        print("\n💰 Total Belanja:")
+        print(f"Total Harga: Rp {(total_price + total_discount):,.2f}")
+        print(f"Total Diskon: Rp {total_discount:,.2f}")
+        print(f"Total Pembayaran: Rp {total_price:,.2f}")
+        
+        # Confirm order
+        confirm = input("\nLanjutkan checkout? (y/n): ")
+        if confirm.lower() != 'y':
+            return
+            
+        # Process payment
+        payment_method = None
+        while payment_method not in ['1', '2', '3']:
+            print("\nMetode Pembayaran:")
+            print("1. Transfer Bank")
+            print("2. E-Wallet")
+            print("3. COD (Cash On Delivery)")
+            payment_method = input("Pilih metode pembayaran (1-3): ")
+            
+        payment_methods = {
+            '1': 'Transfer Bank',
+            '2': 'E-Wallet',
+            '3': 'COD'
+        }
+        
+        # Create order
+        cursor.execute("""
+            INSERT INTO orders (user_id, total_price, order_date)
+            VALUES (%s, %s, NOW())
+        """, (user_id, total_price))
+        order_id = cursor.lastrowid
+        
+        # Create payment record
+        cursor.execute("""
+            INSERT INTO payment (order_id, payment_method, payment_status, payment_date)
+            VALUES (%s, %s, 'success', NOW())
+        """, (order_id, payment_methods[payment_method]))
+        
+        # Update product stock and clear trolley
+        for item in items:
+            # Update stock
+            cursor.execute("""
+                UPDATE products 
+                SET stock = stock - %s 
+                WHERE product_id = %s
+            """, (item['quantity'], item['product_id']))
+            
+            # Clear item from trolley
+            cursor.execute("""
+                DELETE FROM trolley 
+                WHERE trolley_id = %s
+            """, (item['trolley_id'],))
+            
+        connection.commit()
+        print("\n✅ Pesanan berhasil dibuat!")
+        print(f"Order ID: {order_id}")
+        print(f"Total Pembayaran: Rp {total_price:,.2f}")
+        print(f"Metode Pembayaran: {payment_methods[payment_method]}")
+        print("Status: Pembayaran Berhasil")
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        if 'connection' in locals():
+            connection.rollback()
+    finally:
+        if 'connection' in locals():
+            cursor.close()
+            connection.close()
+
+# Menu Seller
+def menu_seller(user_id):
+    while True:
+        print("\n===== MENU UTAMA SELLER =====")
+        print("1. Menu Produk")
+        print("2. Menu Kategori")
+        print("3. Menu Profil")
+        print("4. Menu Review")
+        print("5. Menu Promo")
+        print("6. Logout")
+
+        pilihan = input("Pilih menu (1-6): ")
+
+        if pilihan == '1':
+            menu_produk_seller(user_id)
+        elif pilihan == '2':
+            menu_kategori()
+        elif pilihan == '3':
+            menu_profil_seller(user_id)
+        elif pilihan == '4':
+            menu_review_seller(user_id)
+        elif pilihan == '5':
+            menu_promo_seller(user_id)
+        elif pilihan == '6':
+            print("🔒 Logout berhasil.\n")
+            break
+        else:
+            print("❌ Pilihan tidak valid!")
+
+# Menu Customer
+def menu_customer(user_id):
+    while True:
+        print("\n===== MENU UTAMA CUSTOMER =====")
+        print("1. Menu Produk")
+        print("2. Menu Trolley")
+        print("3. Menu Profil")
+        print("4. Promo & Diskon")
+        print("5. Logout")
+
+        pilihan = input("Pilih menu (1-5): ")
+
+        if pilihan == '1':
+            menu_produk(user_id)
+        elif pilihan == '2':
+            menu_trolley(user_id)
+        elif pilihan == '3':
+            menu_profil(user_id)
+        elif pilihan == '4':
+            lihat_promo()
+        elif pilihan == '5':
+            print("🔒 Logout berhasil.\n")
+            break
+        else:
+            print("❌ Pilihan tidak valid!")
+
+# Menu Utama (Login dan Register)
+def main_menu():
+    while True:
+        print("\n===== MENU UTAMA =====")
+        print("1. Login")
+        print("2. Register")
+        print("3. Keluar")
+
+        pilihan = input("Pilih menu (1-3): ")
+
+        if pilihan == '1':
+            user_id, name, role = login_user()
+            if user_id:
+                if role == 'seller':
+                    menu_seller(user_id)
+                else:
+                    menu_customer(user_id)
+        elif pilihan == '2':
+            register_user()
+        elif pilihan == '3':
+            print("🚪 Keluar dari program...")
+            break
+        else:
+            print("❌ Pilihan tidak valid!")
 
 # Jalankan program
 if __name__ == "__main__":
