@@ -1,0 +1,32 @@
+[{
+  "_id": {
+    "$oid": "6848e5277e934d157cc3784e"
+  },
+  "user_id": 1,
+  "user_name": "Halo",
+  "product_id": 3,
+  "product_name": "adiadi",
+  "rating": 4,
+  "comment": "Bagus",
+  "created_at": {
+    "$date": "2025-06-11T09:08:39.550Z"
+  },
+  "likes": 0,
+  "replies": []
+},
+{
+  "_id": {
+    "$oid": "6848e832bd1abe61f7f6e3fb"
+  },
+  "user_id": 3,
+  "user_name": "adada",
+  "product_id": 3,
+  "product_name": "adiadi",
+  "rating": 2,
+  "comment": "ddsd",
+  "created_at": {
+    "$date": "2025-06-11T09:21:38.622Z"
+  },
+  "likes": 0,
+  "replies": []
+}]
