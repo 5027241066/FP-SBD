@@ -8,7 +8,7 @@ def create_connection():
         connection = mysql.connector.connect(
             host='localhost',
             user='root',
-            password='',  # Isi password MySQL kamu
+            password='',
             database='ecommerce',
             port=3306,
             auth_plugin='mysql_native_password'
@@ -20,20 +20,164 @@ def create_connection():
         print(f"❌ Gagal terhubung ke database: {e}")
         return None
 
-# MongoDB Connection
 def create_mongo_connection():
     try:
         client = pymongo.MongoClient("mongodb://localhost:27017/")
-        db = client["E-Commerce_FP"]  # Changed to match existing database name
+        db = client["E-Commerce_FP"]  
         print("✅ Berhasil terhubung ke MongoDB.")
+        
+        # Clean up existing reviews by removing likes field
+        db.Review.update_many(
+            {"likes": {"$exists": True}},
+            {"$unset": {"likes": ""}}
+        )
+        
         return db
     except Exception as e:
         print(f"❌ Gagal terhubung ke MongoDB: {e}")
         return None
 
-# REGISTER - Tambah User Baru
+def create_notification(user_id, title, message, notification_type):
+    """
+    Create a new notification in MongoDB
+    notification_type can be: 'order', 'review', 'promo', 'system'
+    """
+    try:
+        db = create_mongo_connection()
+        if not db:
+            return False
+            
+        notification = {
+            "user_id": user_id,
+            "title": title,
+            "message": message,
+            "type": notification_type,
+            "is_read": False,
+            "created_at": datetime.now()
+        }
+        
+        db.Notifications.insert_one(notification)
+        return True
+    except Exception as e:
+        print(f"❌ Error creating notification: {e}")
+        return False
+
+def get_notifications(user_id, unread_only=False):
+    """
+    Get notifications for a user
+    If unread_only is True, only return unread notifications
+    """
+    try:
+        db = create_mongo_connection()
+        if not db:
+            return []
+            
+        query = {"user_id": user_id}
+        if unread_only:
+            query["is_read"] = False
+            
+        notifications = list(db.Notifications.find(query).sort("created_at", -1))
+        return notifications
+    except Exception as e:
+        print(f"❌ Error getting notifications: {e}")
+        return []
+
+def mark_notification_as_read(notification_id):
+    """Mark a notification as read"""
+    try:
+        db = create_mongo_connection()
+        if not db:
+            return False
+            
+        result = db.Notifications.update_one(
+            {"_id": ObjectId(notification_id)},
+            {"$set": {"is_read": True}}
+        )
+        return result.modified_count > 0
+    except Exception as e:
+        print(f"❌ Error marking notification as read: {e}")
+        return False
+
+def delete_notification(notification_id):
+    """Delete a notification"""
+    try:
+        db = create_mongo_connection()
+        if not db:
+            return False
+            
+        result = db.Notifications.delete_one({"_id": ObjectId(notification_id)})
+        return result.deleted_count > 0
+    except Exception as e:
+        print(f"❌ Error deleting notification: {e}")
+        return False
+
+def view_notifications(user_id):
+    """View all notifications for a user"""
+    try:
+        notifications = get_notifications(user_id)
+        
+        if not notifications:
+            print("\n📭 Tidak ada notifikasi.")
+            return
+            
+        print("\n📬 Notifikasi Anda:")
+        for i, notif in enumerate(notifications, 1):
+            read_status = "✓" if notif.get("is_read", False) else "●"
+            print(f"\n{i}. [{read_status}] {notif['title']}")
+            print(f"   {notif['message']}")
+            print(f"   Tipe: {notif['type']}")
+            print(f"   Tanggal: {notif['created_at'].strftime('%d-%m-%Y %H:%M')}")
+            print("-" * 50)
+            
+        while True:
+            print("\nPilihan:")
+            print("1. Tandai sebagai dibaca")
+            print("2. Hapus notifikasi")
+            print("3. Kembali")
+            
+            choice = input("\nPilih menu (1-3): ")
+            
+            if choice == "1":
+                try:
+                    notif_num = int(input("Masukkan nomor notifikasi yang ingin ditandai (0 untuk batal): "))
+                    if notif_num == 0:
+                        continue
+                    if 1 <= notif_num <= len(notifications):
+                        if mark_notification_as_read(notifications[notif_num-1]["_id"]):
+                            print("✅ Notifikasi ditandai sebagai dibaca!")
+                            notifications = get_notifications(user_id)  # Refresh notifications
+                        else:
+                            print("❌ Gagal menandai notifikasi!")
+                    else:
+                        print("❌ Nomor notifikasi tidak valid!")
+                except ValueError:
+                    print("❌ Masukkan angka yang valid!")
+                    
+            elif choice == "2":
+                try:
+                    notif_num = int(input("Masukkan nomor notifikasi yang ingin dihapus (0 untuk batal): "))
+                    if notif_num == 0:
+                        continue
+                    if 1 <= notif_num <= len(notifications):
+                        if delete_notification(notifications[notif_num-1]["_id"]):
+                            print("✅ Notifikasi berhasil dihapus!")
+                            notifications = get_notifications(user_id)  # Refresh notifications
+                        else:
+                            print("❌ Gagal menghapus notifikasi!")
+                    else:
+                        print("❌ Nomor notifikasi tidak valid!")
+                except ValueError:
+                    print("❌ Masukkan angka yang valid!")
+                    
+            elif choice == "3":
+                break
+            else:
+                print("❌ Pilihan tidak valid!")
+                
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
 def register_user():
-    # Select role first
     while True:
         role = input("Pilih role (1: Customer, 2: Seller): ")
         if role in ['1', '2']:
@@ -41,10 +185,8 @@ def register_user():
             break
         print("❌ Pilihan tidak valid! Pilih 1 atau 2.")
 
-    # Common information for both roles
     name = input("Masukkan Nama: ")
     
-    # Username validation
     while True:
         username = input("Masukkan Username: ")
         if not username.strip():
@@ -55,7 +197,6 @@ def register_user():
             connection = create_connection()
             cursor = connection.cursor()
             
-            # Check if username already exists
             cursor.execute("SELECT username FROM users WHERE username = %s", (username,))
             if cursor.fetchone():
                 print("❌ Username sudah digunakan. Pilih username lain.")
@@ -68,7 +209,6 @@ def register_user():
                 connection.close()
             continue
     
-    # Email validation
     while True:
         email = input("Masukkan Email: ")
         if not email.strip():
@@ -79,11 +219,14 @@ def register_user():
             print("❌ Email tidak sesuai format!")
             continue
             
+        if "." not in email:
+            print("❌ Email tidak sesuai format!")
+            continue
+
         try:
             connection = create_connection()
             cursor = connection.cursor()
             
-            # Check if email already exists
             cursor.execute("SELECT email FROM users WHERE email = %s", (email,))
             if cursor.fetchone():
                 print("❌ Email sudah terdaftar. Gunakan email lain.")
@@ -98,7 +241,6 @@ def register_user():
     
     password = input("Masukkan Password: ")
     
-    # Phone number validation
     while True:
         phone_number = input("Masukkan Nomor Telepon: ")
         if not phone_number.strip():
@@ -116,41 +258,33 @@ def register_user():
         cursor = connection.cursor()
 
         if role == 'customer':
-            # Get customer address
             address = input("Masukkan Alamat: ")
             
-            # Insert into customer table first
             cursor.execute("""
                 INSERT INTO customer (name, email, address) 
                 VALUES (%s, %s, %s)
             """, (name, email, address))
             connection.commit()
             
-            # Get the customer_id
             customer_id = cursor.lastrowid
             
-            # Insert into users table with customer_id
             cursor.execute("""
                 INSERT INTO users (role, name, username, phone_number, email, password, customer_id) 
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, (role, name, username, phone_number, email, password, customer_id))
             
-        else:  # seller
-            # Get store information
+        else:
             store_name = input("Masukkan Nama Toko: ")
             store_address = input("Masukkan Alamat Toko: ")
             
-            # Insert into seller table first
             cursor.execute("""
                 INSERT INTO seller (store_name, store_address) 
                 VALUES (%s, %s)
             """, (store_name, store_address))
             connection.commit()
 
-            # Get the seller_id
             seller_id = cursor.lastrowid
             
-            # Insert into users table with seller_id
             cursor.execute("""
                 INSERT INTO users (role, name, username, phone_number, email, password, seller_id) 
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -166,42 +300,27 @@ def register_user():
         cursor.close()
         connection.close()
 
-# LOGIN - Autentikasi User
 def login_user():
-    print("\nPilih metode login:")
-    print("1. Login dengan Email")
-    print("2. Login dengan Username")
-    
-    while True:
-        login_method = input("Pilih metode (1/2): ")
-        if login_method in ['1', '2']:
-            break
-        print("❌ Pilihan tidak valid!")
-    
-    if login_method == '1':
-        identifier = input("Masukkan Email: ")
-        identifier_field = "email"
-    else:
-        identifier = input("Masukkan Username: ")
-        identifier_field = "username"
-        
+    identifier = input("\nMasukkan Email atau Username: ")
     password = input("Masukkan Password: ")
 
     try:
         connection = create_connection()
         cursor = connection.cursor(dictionary=True)
 
-        # Get user from users table
-        query = f"""
+        # Check if identifier is an email
+        is_email = '@' in identifier and '.' in identifier
+
+        query = """
             SELECT u.user_id, u.name, u.email, u.username, u.phone_number, u.role,
                    COALESCE(c.address, s.store_address) as address,
                    c.customer_id, s.seller_id
             FROM users u
             LEFT JOIN customer c ON u.customer_id = c.customer_id
             LEFT JOIN seller s ON u.seller_id = s.seller_id
-            WHERE u.{identifier_field} = %s AND u.password = %s
+            WHERE (u.email = %s OR u.username = %s) AND u.password = %s
         """
-        cursor.execute(query, (identifier, password))
+        cursor.execute(query, (identifier, identifier, password))
         user = cursor.fetchone()
 
         if user:
@@ -211,14 +330,10 @@ def login_user():
             print(f"No. Telepon: {user['phone_number']}")
             print(f"Alamat: {user['address']}")
             
-            # Return customer_id or seller_id based on role
             user_id = user['customer_id'] if user['role'] == 'customer' else user['seller_id']
             return user_id, user['name'], user['role']
         else:
-            if login_method == '1':
-                print("❌ Email atau password salah!")
-            else:
-                print("❌ Username atau password salah!")
+            print("❌ Email/Username atau password salah!")
 
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -228,13 +343,11 @@ def login_user():
 
     return None, None, None
 
-# Tampilkan Kategori
 def tampilkan_kategori():
     try:
         connection = create_connection()
         cursor = connection.cursor(dictionary=True)
         
-        # Get all categories
         cursor.execute("SELECT * FROM categories ORDER BY categories_name")
         categories = cursor.fetchall()
         
@@ -248,10 +361,8 @@ def tampilkan_kategori():
         cursor.close()
         connection.close()
 
-# CREATE - Tambah Produk
 def tambah_produk(seller_id):
     try:
-        # Check if there are any categories available first
         connection = create_connection()
         cursor = connection.cursor(dictionary=True)
         
@@ -263,14 +374,12 @@ def tambah_produk(seller_id):
             print("ℹ️ Silakan tambahkan kategori terlebih dahulu melalui Menu Kategori.")
             return
             
-        # Show categories first
         print("\nKategori yang tersedia:")
         tampilkan_kategori()
         
         nama = input("\nMasukkan nama produk: ")
         deskripsi = input("Masukkan deskripsi produk: ")
         
-        # Validate price input
         while True:
             try:
                 harga = float(input("Masukkan harga produk: "))
@@ -281,7 +390,6 @@ def tambah_produk(seller_id):
             except ValueError:
                 print("❌ Harga harus berupa angka!")
         
-        # Validate stock input
         while True:
             try:
                 stok = int(input("Masukkan stok produk: "))
@@ -292,12 +400,10 @@ def tambah_produk(seller_id):
             except ValueError:
                 print("❌ Stok harus berupa angka!")
         
-        # Validate category input
         while True:
             try:
                 kategori_id = int(input("Masukkan kategori ID: "))
                 
-                # Check if category exists
                 cursor.execute("SELECT * FROM categories WHERE category_id = %s", (kategori_id,))
                 if not cursor.fetchone():
                     print("❌ Kategori tidak ditemukan! Silakan pilih ID kategori yang tersedia.")
@@ -306,7 +412,6 @@ def tambah_produk(seller_id):
             except ValueError:
                 print("❌ Kategori ID harus berupa angka!")
         
-        # Insert product
         query = """
             INSERT INTO products (name, description, price, stock, category_id, seller_id, date_posted) 
             VALUES (%s, %s, %s, %s, %s, %s, NOW())
@@ -326,31 +431,41 @@ def tambah_produk(seller_id):
             cursor.close()
             connection.close()
 
-# READ - Tampilkan Semua Produk
-def tampilkan_produk():
+def tampilkan_produk(seller_id=None):
     try:
         connection = create_connection()
         cursor = connection.cursor(dictionary=True)
         
-        # Get products from MySQL
-        query = """
-            SELECT p.*, c.categories_name as category_name, s.store_name as seller_name
-            FROM products p
-            JOIN categories c ON p.category_id = c.category_id
-            JOIN seller s ON p.seller_id = s.seller_id
-            ORDER BY p.date_posted DESC
-        """
-        cursor.execute(query)
+        if seller_id:
+            # Show only products for specific seller
+            query = """
+                SELECT p.*, c.categories_name as category_name, s.store_name as seller_name
+                FROM products p
+                JOIN categories c ON p.category_id = c.category_id
+                JOIN seller s ON p.seller_id = s.seller_id
+                WHERE p.seller_id = %s
+                ORDER BY p.date_posted DESC
+            """
+            cursor.execute(query, (seller_id,))
+        else:
+            # Show all products (for customer view)
+            query = """
+                SELECT p.*, c.categories_name as category_name, s.store_name as seller_name
+                FROM products p
+                JOIN categories c ON p.category_id = c.category_id
+                JOIN seller s ON p.seller_id = s.seller_id
+                ORDER BY p.date_posted DESC
+            """
+            cursor.execute(query)
+            
         products = cursor.fetchall()
         
-        # Get ratings from MongoDB
         db = create_mongo_connection()
         if not db:
             return
             
         print("\n📦 Daftar Produk: ")
         for product in products:
-            # Calculate average rating
             reviews = db.Review.find({"product_id": product['product_id']})
             total_rating = 0
             review_count = 0
@@ -370,7 +485,7 @@ def tampilkan_produk():
             print(f"Stok: {product['stock']}")
             print(f"Tanggal Posting: {product['date_posted']}")
             print(f"Rating: {avg_rating:.1f} ⭐ ({review_count} review)")
-            print("-" * 50)  # Made the separator line longer for better readability
+            print("-" * 50)
 
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -379,7 +494,6 @@ def tampilkan_produk():
             cursor.close()
             connection.close()
 
-# UPDATE - Edit Produk
 def edit_produk(seller_id):
     try:
         product_id = int(input("Masukkan ID produk yang ingin diupdate: "))
@@ -387,7 +501,6 @@ def edit_produk(seller_id):
         connection = create_connection()
         cursor = connection.cursor(dictionary=True)
         
-        # Check if product exists and belongs to seller
         cursor.execute("""
             SELECT * FROM products 
             WHERE product_id = %s AND seller_id = %s
@@ -398,7 +511,6 @@ def edit_produk(seller_id):
             print("❌ Produk tidak ditemukan atau Anda tidak memiliki akses!")
             return
             
-        # Show current product details
         print("\n📦 Detail Produk Saat Ini:")
         print(f"1. Nama: {product['name']}")
         print(f"2. Deskripsi: {product['description']}")
@@ -407,7 +519,6 @@ def edit_produk(seller_id):
         print(f"5. Kategori ID: {product['category_id']}")
         print("6. Kembali")
         
-        # Initialize update data
         update_fields = []
         update_values = []
         
@@ -462,13 +573,11 @@ def edit_produk(seller_id):
                         continue
                         
                 elif pilihan == "5":
-                    # Show available categories first
                     print("\nKategori yang tersedia:")
                     tampilkan_kategori()
                     
                     try:
                         kategori_baru = int(input("\nMasukkan kategori ID baru: "))
-                        # Verify if category exists
                         cursor.execute("SELECT * FROM categories WHERE category_id = %s", (kategori_baru,))
                         if not cursor.fetchone():
                             print("❌ Kategori tidak ditemukan!")
@@ -485,17 +594,14 @@ def edit_produk(seller_id):
                 print(f"❌ Error: {e}")
                 continue
         
-        # Add date_posted to update fields
         update_fields.append("date_posted = NOW()")
         
-        # Construct and execute update query
         query = f"""
             UPDATE products
             SET {', '.join(update_fields)}
             WHERE product_id = %s AND seller_id = %s
         """
         
-        # Add product_id and seller_id to values
         update_values.extend([product_id, seller_id])
         
         cursor.execute(query, tuple(update_values))
@@ -509,7 +615,6 @@ def edit_produk(seller_id):
         cursor.close()
         connection.close()
 
-# DELETE - Hapus Produk
 def hapus_produk(seller_id):
     try:
         product_id = int(input("Masukkan ID produk yang ingin dihapus: "))
@@ -517,7 +622,6 @@ def hapus_produk(seller_id):
         connection = create_connection()
         cursor = connection.cursor(dictionary=True)
 
-        # Check if product exists and belongs to seller
         cursor.execute("""
             SELECT * FROM products 
             WHERE product_id = %s AND seller_id = %s
@@ -528,7 +632,6 @@ def hapus_produk(seller_id):
             print("❌ Produk tidak ditemukan atau Anda tidak memiliki akses!")
             return
 
-        # Delete the product
         cursor.execute("""
             DELETE FROM products 
             WHERE product_id = %s AND seller_id = %s
@@ -545,7 +648,6 @@ def hapus_produk(seller_id):
             cursor.close()
             connection.close()
 
-# Beli Produk
 def beli_produk(user_id):
     tampilkan_produk()
     
@@ -556,7 +658,6 @@ def beli_produk(user_id):
         connection = create_connection()
         cursor = connection.cursor(dictionary=True)
         
-        # Check product availability
         cursor.execute("SELECT * FROM products WHERE product_id = %s", (product_id,))
         product = cursor.fetchone()
         
@@ -570,7 +671,7 @@ def beli_produk(user_id):
             
         total_harga = product['price'] * jumlah
         
-        # Create order
+        # Insert into orders table
         cursor.execute("""
             INSERT INTO orders (user_id, total_price, order_date)
             VALUES (%s, %s, NOW())
@@ -578,19 +679,19 @@ def beli_produk(user_id):
         
         order_id = cursor.lastrowid
         
-        # Create order detail
+        # Insert into order_details table
         cursor.execute("""
             INSERT INTO order_details (order_id, product_id, quantity, price_per_unit)
             VALUES (%s, %s, %s, %s)
         """, (order_id, product_id, jumlah, product['price']))
         
-        # Create payment record with success status
+        # Insert into payment table
         cursor.execute("""
             INSERT INTO payment (payment_status, payment_date, payment_method, order_id)
             VALUES ('success', NOW(), 'Transfer Bank', %s)
         """, (order_id,))
         
-        # Update stock
+        # Update product stock
         cursor.execute("""
             UPDATE products
             SET stock = stock - %s
@@ -607,13 +708,11 @@ def beli_produk(user_id):
         cursor.close()
         connection.close()
 
-# Lihat Riwayat Pembelian
 def lihat_riwayat_pembelian(user_id):
     try:
         connection = create_connection()
         cursor = connection.cursor(dictionary=True)
         
-        # Get orders with payment info
         query = """
             SELECT o.order_id, o.total_price, o.order_date, o.promo,
                    p.payment_method, p.payment_status, p.payment_date
@@ -648,7 +747,6 @@ def lihat_riwayat_pembelian(user_id):
         cursor.close()
         connection.close()
 
-# Tambah ke Trolley
 def tambah_ke_trolley(customer_id):
     try:
         connection = create_connection()
@@ -658,7 +756,6 @@ def tambah_ke_trolley(customer_id):
         product_id = int(input("\nMasukkan ID produk yang ingin ditambah ke trolley: "))
         jumlah = int(input("Masukkan jumlah yang ingin ditambah: "))
         
-        # Check product availability
         cursor.execute("SELECT * FROM products WHERE product_id = %s", (product_id,))
         product = cursor.fetchone()
         
@@ -670,7 +767,6 @@ def tambah_ke_trolley(customer_id):
             print("❌ Stok tidak mencukupi!")
             return
         
-        # Check if product already in trolley
         cursor.execute("""
             SELECT * FROM trolley 
             WHERE user_id = %s AND product_id = %s
@@ -678,14 +774,12 @@ def tambah_ke_trolley(customer_id):
         existing_item = cursor.fetchone()
         
         if existing_item:
-            # Update quantity if product already in trolley
             cursor.execute("""
                 UPDATE trolley 
                 SET quantity = quantity + %s
                 WHERE user_id = %s AND product_id = %s
             """, (jumlah, customer_id, product_id))
         else:
-            # Add new item to trolley
             cursor.execute("""
                 INSERT INTO trolley (user_id, product_id, quantity, added_at)
                 VALUES (%s, %s, %s, NOW())
@@ -701,7 +795,6 @@ def tambah_ke_trolley(customer_id):
         cursor.close()
         connection.close()
 
-# Lihat Isi Trolley
 def lihat_trolley(customer_id):
     try:
         connection = create_connection()
@@ -743,7 +836,6 @@ def lihat_trolley(customer_id):
         cursor.close()
         connection.close()
 
-# Ubah Jumlah di Trolley
 def ubah_jumlah_trolley(customer_id):
     if not lihat_trolley(customer_id):
         return
@@ -759,7 +851,6 @@ def ubah_jumlah_trolley(customer_id):
             print("❌ Jumlah harus lebih dari 0!")
             return
             
-        # Check if trolley item exists and belongs to user
         cursor.execute("""
             SELECT t.*, p.stock 
             FROM trolley t
@@ -792,7 +883,6 @@ def ubah_jumlah_trolley(customer_id):
         cursor.close()
         connection.close()
 
-# Hapus dari Trolley
 def hapus_dari_trolley(customer_id):
     if not lihat_trolley(customer_id):
         return
@@ -821,107 +911,116 @@ def hapus_dari_trolley(customer_id):
         cursor.close()
         connection.close()
 
-# Checkout Trolley
 def checkout_trolley(user_id):
-    connection = None
-    cursor = None
     try:
         connection = create_connection()
         cursor = connection.cursor(dictionary=True)
         
-        # Get all items in trolley
+        # Get trolley items
         cursor.execute("""
-            SELECT t.*, p.price, p.stock, p.name
+            SELECT t.*, p.name, p.price, p.seller_id, s.store_name
             FROM trolley t
             JOIN products p ON t.product_id = p.product_id
+            JOIN seller s ON p.seller_id = s.seller_id
             WHERE t.user_id = %s
         """, (user_id,))
         items = cursor.fetchall()
         
         if not items:
-            print("❌ Trolley kosong!")
+            print("❌ Trolley masih kosong!")
             return
             
-        # Verify stock for all items
-        for item in items:
-            if item['quantity'] > item['stock']:
-                print(f"❌ Stok tidak mencukupi untuk produk {item['name']}!")
-                return
-        
         # Calculate total price
         total_price = sum(item['price'] * item['quantity'] for item in items)
         
         # Show order summary
-        print("\n📋 Ringkasan Pesanan:")
+        print("\n📦 Ringkasan Pesanan:")
         for item in items:
-            print(f"- {item['name']} ({item['quantity']} x Rp {item['price']:,.2f})")
-        print(f"\nTotal Harga: Rp {total_price:,.2f}")
+            print(f"\nProduk: {item['name']}")
+            print(f"Toko: {item['store_name']}")
+            print(f"Jumlah: {item['quantity']}")
+            print(f"Harga: Rp {item['price']:,.2f}")
+            print(f"Subtotal: Rp {item['price'] * item['quantity']:,.2f}")
+            print("-" * 30)
+            
+        print(f"\nTotal: Rp {total_price:,.2f}")
         
-        # Select payment method
-        print("\nPilih metode pembayaran:")
-        print("1. Transfer Bank")
-        print("2. E-Wallet")
-        print("3. COD (Cash On Delivery)")
-        
-        while True:
-            try:
-                payment_choice = int(input("\nMasukkan pilihan (1-3): "))
-                if payment_choice < 1 or payment_choice > 3:
-                    print("❌ Pilihan tidak valid!")
-                    continue
-                break
-            except ValueError:
-                print("❌ Pilihan harus berupa angka!")
-        
-        # Map payment choice to method
+        # Get payment method
+        payment_method = ""
+        while payment_method not in ['1', '2', '3']:
+            print("\nMetode Pembayaran:")
+            print("1. Transfer Bank")
+            print("2. E-Wallet")
+            print("3. COD (Cash On Delivery)")
+            payment_method = input("Pilih metode pembayaran (1-3): ")
+            
         payment_methods = {
-            1: "Transfer Bank",
-            2: "E-Wallet",
-            3: "COD"
+            '1': 'Transfer Bank',
+            '2': 'E-Wallet',
+            '3': 'COD'
         }
-        payment_method = payment_methods[payment_choice]
         
         # Create order
         cursor.execute("""
             INSERT INTO orders (user_id, total_price, order_date)
             VALUES (%s, %s, NOW())
         """, (user_id, total_price))
-        
         order_id = cursor.lastrowid
         
-        # Create payment record with success status
+        # Create payment record
         cursor.execute("""
             INSERT INTO payment (order_id, payment_method, payment_status, payment_date)
             VALUES (%s, %s, 'success', NOW())
-        """, (order_id, payment_method))
+        """, (order_id, payment_methods[payment_method]))
         
-        # Update stock for each item
+        # Update product stock and clear trolley
         for item in items:
+            # Update stock
             cursor.execute("""
-                UPDATE products
-                SET stock = stock - %s
+                UPDATE products 
+                SET stock = stock - %s 
                 WHERE product_id = %s
             """, (item['quantity'], item['product_id']))
             
-        # Clear the user's trolley
-        cursor.execute("DELETE FROM trolley WHERE user_id = %s", (user_id,))
-        
+            # Clear item from trolley
+            cursor.execute("""
+                DELETE FROM trolley 
+                WHERE trolley_id = %s
+            """, (item['trolley_id'],))
+            
+            # Create notification for seller
+            create_notification(
+                user_id=item['seller_id'],
+                title="Pesanan Baru",
+                message=f"Pesanan baru #{order_id} untuk produk {item['name']} (Jumlah: {item['quantity']})",
+                notification_type="order"
+            )
+            
         connection.commit()
-        print(f"\n✅ Checkout berhasil! Pembayaran dengan {payment_method} telah dikonfirmasi.")
-        print(f"Total pembayaran: Rp {total_price:,.2f}")
-        print("Terima kasih telah berbelanja!")
+        
+        # Create notification for customer
+        create_notification(
+            user_id=user_id,
+            title="Pesanan Berhasil",
+            message=f"Pesanan #{order_id} berhasil dibuat dengan total Rp {total_price:,.2f}",
+            notification_type="order"
+        )
+        
+        print("\n✅ Pesanan berhasil dibuat!")
+        print(f"Order ID: {order_id}")
+        print(f"Total Pembayaran: Rp {total_price:,.2f}")
+        print(f"Metode Pembayaran: {payment_methods[payment_method]}")
+        print("Status: Pembayaran Berhasil")
         
     except Exception as e:
         print(f"❌ Error: {e}")
-        if connection:
+        if 'connection' in locals():
             connection.rollback()
     finally:
-        if cursor:
+        if 'connection' in locals():
             cursor.close()
-        if connection:
             connection.close()
 
-# Lihat Profil User
 def lihat_profil(user_id, role):
     try:
         connection = create_connection()
@@ -1112,7 +1211,7 @@ def menu_produk_seller(seller_id):
         if pilihan == '1':
             tambah_produk(seller_id)
         elif pilihan == '2':
-            tampilkan_produk()
+            tampilkan_produk(seller_id)  # Pass seller_id to show only their products
         elif pilihan == '3':
             edit_produk(seller_id)
         elif pilihan == '4':
@@ -1305,22 +1404,6 @@ def update_payment_status(seller_id):
         cursor.close()
         connection.close()
 
-# Menu Payment
-def menu_payment(seller_id):
-    while True:
-        print("\n===== Menu Payment =====")
-        print("1. Update Status Pembayaran")
-        print("2. Kembali")
-
-        pilihan = input("Pilih menu (1-2): ")
-
-        if pilihan == '1':
-            update_payment_status(seller_id)
-        elif pilihan == '2':
-            break
-        else:
-            print("❌ Pilihan tidak valid!")
-
 # Menu Review Seller
 def menu_review_seller(seller_id):
     while True:
@@ -1399,28 +1482,31 @@ def lihat_review_produk_seller(seller_id):
 # Menu Seller
 def menu_seller(user_id):
     while True:
-        print("\n===== MENU UTAMA SELLER =====")
+        print("\n===== Menu Seller =====")
         print("1. Menu Produk")
         print("2. Menu Kategori")
-        print("3. Menu Profil")
-        print("4. Menu Review")
-        print("5. Menu Promo")
-        print("6. Logout")
+        print("3. Menu Review")
+        print("4. Menu Promo")
+        print("5. Menu Profil")
+        print("6. Notifikasi")
+        print("7. Logout")
 
-        pilihan = input("Pilih menu (1-6): ")
+        pilihan = input("Pilih menu (1-7): ")
 
         if pilihan == '1':
             menu_produk_seller(user_id)
         elif pilihan == '2':
             menu_kategori()
         elif pilihan == '3':
-            menu_profil_seller(user_id)
-        elif pilihan == '4':
             menu_review_seller(user_id)
-        elif pilihan == '5':
+        elif pilihan == '4':
             menu_promo_seller(user_id)
+        elif pilihan == '5':
+            menu_profil_seller(user_id)
         elif pilihan == '6':
-            print("🔒 Logout berhasil.\n")
+            view_notifications(user_id)
+        elif pilihan == '7':
+            print("Logout berhasil!")
             break
         else:
             print("❌ Pilihan tidak valid!")
@@ -1433,9 +1519,10 @@ def menu_customer(user_id):
         print("2. Menu Trolley")
         print("3. Menu Profil")
         print("4. Promo & Diskon")
-        print("5. Logout")
+        print("5. Notifikasi")
+        print("6. Logout")
 
-        pilihan = input("Pilih menu (1-5): ")
+        pilihan = input("Pilih menu (1-6): ")
 
         if pilihan == '1':
             menu_produk(user_id)
@@ -1446,6 +1533,8 @@ def menu_customer(user_id):
         elif pilihan == '4':
             lihat_promo()
         elif pilihan == '5':
+            view_notifications(user_id)
+        elif pilihan == '6':
             print("🔒 Logout berhasil.\n")
             break
         else:
@@ -1475,25 +1564,6 @@ def main_menu():
             break
         else:
             print("❌ Pilihan tidak valid!")
-
-# Placeholder functions for new features (implement these later)
-def cari_produk(keyword):
-    print("🔍 Fitur pencarian produk akan segera hadir!")
-
-def filter_produk():
-    print("🔍 Fitur filter produk akan segera hadir!")
-
-def lihat_wishlist(user_id):
-    print("💝 Fitur wishlist akan segera hadir!")
-
-def tambah_ke_wishlist(user_id):
-    print("💝 Fitur tambah ke wishlist akan segera hadir!")
-
-def lihat_ulasan_saya(user_id):
-    print("⭐ Fitur ulasan akan segera hadir!")
-
-def lihat_promo():
-    print("🏷️ Fitur promo & diskon akan segera hadir!")
 
 # Tambah Review
 def tambah_review(user_id):
@@ -1527,7 +1597,7 @@ def tambah_review(user_id):
             
         # Check if product exists
         cursor.execute("""
-            SELECT p.*, s.store_name 
+            SELECT p.*, s.store_name, s.seller_id
             FROM products p
             JOIN seller s ON p.seller_id = s.seller_id 
             WHERE p.product_id = %s
@@ -1537,17 +1607,41 @@ def tambah_review(user_id):
             print("❌ Produk tidak ditemukan!")
             return
             
-        # Check if user has any orders
+        # Debug: Print user's orders and payments
+        print("\nDebug - Checking purchase history:")
         cursor.execute("""
-            SELECT o.* 
+            SELECT o.order_id, o.user_id, od.product_id, p.payment_status
             FROM orders o
-            WHERE o.user_id = %s
-        """, (user_id,))
-        orders = cursor.fetchall()  # Make sure to fetch all results
-        if not orders:
-            print("❌ Anda harus membeli produk terlebih dahulu untuk memberikan review!")
+            JOIN order_details od ON o.order_id = od.order_id
+            LEFT JOIN payment p ON o.order_id = p.order_id
+            WHERE o.user_id = %s AND od.product_id = %s
+        """, (user_id, product_id))
+        purchase_history = cursor.fetchall()
+        
+        if purchase_history:
+            print("Found purchase records:")
+            for record in purchase_history:
+                print(f"Order ID: {record['order_id']}, Payment Status: {record['payment_status']}")
+        else:
+            print("No purchase records found")
+            
+        # Check if user has purchased this product with successful payment
+        cursor.execute("""
+            SELECT od.*, o.order_id, p.payment_status
+            FROM order_details od
+            JOIN orders o ON od.order_id = o.order_id
+            LEFT JOIN payment p ON o.order_id = p.order_id
+            WHERE o.user_id = %s 
+            AND od.product_id = %s
+            AND p.payment_status IN ('success', 'paid')
+        """, (user_id, product_id))
+        purchase = cursor.fetchone()
+        
+        if not purchase:
+            print("❌ Anda harus membeli dan menyelesaikan pembayaran produk ini terlebih dahulu untuk memberikan review!")
             return
             
+        # Rest of the review function remains the same...
         # Check if user has already reviewed this product
         db = create_mongo_connection()
         if not db:
@@ -1563,44 +1657,45 @@ def tambah_review(user_id):
             return
             
         # Get review details
-        rating = 0
-        while rating < 1 or rating > 5:
+        while True:
             try:
-                rating = int(input("\nBerikan rating (1-5): "))
-                if rating < 1 or rating > 5:
-                    print("❌ Rating harus antara 1-5!")
+                rating = int(input("\nMasukkan rating (1-5): "))
+                if 1 <= rating <= 5:
+                    break
+                print("❌ Rating harus antara 1-5!")
             except ValueError:
                 print("❌ Rating harus berupa angka!")
                 
-        comment = input("Tulis review Anda: ")
+        comment = input("Masukkan komentar: ")
         
         # Create review document
         review = {
-            "user_id": user_id,  # Store the actual user_id
-            "user_name": user["name"],
+            "user_id": user_id,
+            "user_name": user['name'],
             "product_id": product_id,
-            "product_name": product["name"],
+            "product_name": product['name'],
             "rating": rating,
             "comment": comment,
             "created_at": datetime.now(),
             "replies": [],
-            "qna": []
+            "qa": []
         }
         
-        # Insert review into the Review collection
+        # Insert review into MongoDB
         db.Review.insert_one(review)
         
-        # Show confirmation and review summary
-        print("\n✅ Review berhasil ditambahkan!")
-        print("\nReview Anda:")
-        print(f"Produk: {product['name']}")
-        print(f"Rating: {'⭐' * rating}")
-        print(f"Komentar: {comment}")
+        # Create notification for seller
+        create_notification(
+            product['seller_id'],
+            "Review Baru",
+            f"Produk '{product['name']}' mendapat review baru dari {user['name']}",
+            "review"
+        )
+        
+        print("✅ Review berhasil ditambahkan!")
         
     except Exception as e:
         print(f"❌ Error: {e}")
-        if connection:
-            connection.rollback()
     finally:
         if cursor:
             cursor.close()
@@ -2274,7 +2369,6 @@ def balas_review(seller_id):
                     print(f"   - {reply['user_name']}: {reply['comment']}")
             print("-" * 40)
             
-        # Select review to reply
         try:
             choice = int(input("\nPilih nomor review yang ingin dibalas (0 untuk batal): "))
             if choice == 0:
@@ -2288,30 +2382,18 @@ def balas_review(seller_id):
             
         selected_review = reviews[choice - 1]
         
-        # Check if seller has already replied
-        seller_replies = [r for r in selected_review.get('replies', []) 
-                         if r['user_name'] == seller['store_name']]
-        if seller_replies:
-            print("\nAnda sudah membalas review ini:")
-            for reply in seller_replies:
-                print(f"- {reply['comment']}")
-            
-            edit = input("\nIngin mengedit balasan? (y/n): ")
-            if edit.lower() != 'y':
-                return
-        
         # Get reply
         reply = input("\nTulis balasan Anda: ")
-        if not reply.strip():
-            print("❌ Balasan tidak boleh kosong!")
-            return
-            
-        # Add reply to review
+        
+        # Create reply object
         new_reply = {
             "user_name": seller['store_name'],
             "comment": reply,
             "created_at": datetime.now()
         }
+        
+        # Check if seller has already replied
+        seller_replies = [r for r in selected_review.get('replies', []) if r['user_name'] == seller['store_name']]
         
         if seller_replies:
             # Update existing reply
@@ -2333,6 +2415,14 @@ def balas_review(seller_id):
                 {"_id": selected_review["_id"]},
                 {"$push": {"replies": new_reply}}
             )
+            
+        # Create notification for customer
+        create_notification(
+            user_id=selected_review['user_id'],
+            title="Balasan Review",
+            message=f"Seller {seller['store_name']} membalas review Anda untuk produk {selected_review['product_name']}",
+            notification_type="review"
+        )
         
         print("\n✅ Balasan berhasil ditambahkan!")
         print("\nReview dengan balasan:")
@@ -2358,7 +2448,7 @@ def tambah_promo(seller_id):
         
         # Get seller's products
         cursor.execute("""
-            SELECT product_id, name, price 
+            SELECT product_id, name 
             FROM products 
             WHERE seller_id = %s
         """, (seller_id,))
@@ -2370,40 +2460,79 @@ def tambah_promo(seller_id):
             
         print("\n📦 Daftar Produk Anda:")
         for product in products:
-            print(f"ID: {product['product_id']} - {product['name']} (Rp {product['price']:,.2f})")
+            print(f"\nID: {product['product_id']}")
+            print(f"Nama: {product['name']}")
             
         try:
-            product_id = int(input("\nMasukkan ID produk untuk diskon: "))
-            # Verify product belongs to seller
-            product = next((p for p in products if p['product_id'] == product_id), None)
-            if not product:
-                print("❌ Produk tidak ditemukan atau bukan milik Anda!")
-                return
+            product_id = int(input("\nMasukkan ID produk yang ingin diberi diskon: "))
         except ValueError:
             print("❌ ID produk harus berupa angka!")
             return
-                
+            
+        # Check if product exists and belongs to seller
+        cursor.execute("""
+            SELECT * FROM products 
+            WHERE product_id = %s AND seller_id = %s
+        """, (product_id, seller_id))
+        product = cursor.fetchone()
+        
+        if not product:
+            print("❌ Produk tidak ditemukan atau bukan milik Anda!")
+            return
+            
+        # Get discount details
         while True:
             try:
-                discount = float(input("Masukkan persentase diskon (1-100): "))
-                if 0 < discount <= 100:
+                discount = float(input("\nMasukkan persentase diskon (1-100): "))
+                if 1 <= discount <= 100:
                     break
-                print("❌ Persentase harus antara 1-100!")
+                print("❌ Persentase diskon harus antara 1-100!")
             except ValueError:
                 print("❌ Masukkan angka yang valid!")
+                
+        # Get date range
+        while True:
+            try:
+                start_date = input("\nMasukkan tanggal mulai (YYYY-MM-DD): ")
+                end_date = input("Masukkan tanggal selesai (YYYY-MM-DD): ")
+                
+                # Validate dates
+                start = datetime.strptime(start_date, "%Y-%m-%d")
+                end = datetime.strptime(end_date, "%Y-%m-%d")
+                
+                if end < start:
+                    print("❌ Tanggal selesai harus setelah tanggal mulai!")
+                    continue
                     
-        # Set validity period
-        print("\nMasa Berlaku Diskon:")
-        start_date = input("Tanggal mulai (YYYY-MM-DD): ")
-        end_date = input("Tanggal berakhir (YYYY-MM-DD): ")
-        
-        # Insert discount
+                if start < datetime.now():
+                    print("❌ Tanggal mulai harus di masa depan!")
+                    continue
+                    
+                break
+            except ValueError:
+                print("❌ Format tanggal tidak valid! Gunakan format YYYY-MM-DD")
+                
+        # Add discount
         cursor.execute("""
             INSERT INTO discounts (product_id, discount_percentage, start_date, end_date)
             VALUES (%s, %s, %s, %s)
         """, (product_id, discount, start_date, end_date))
         
         connection.commit()
+        
+        # Get all customers for notification
+        cursor.execute("SELECT user_id FROM users WHERE role = 'customer'")
+        customers = cursor.fetchall()
+        
+        # Create notifications for all customers
+        for customer in customers:
+            create_notification(
+                user_id=customer['user_id'],
+                title="Promo Baru",
+                message=f"Diskon {discount}% untuk produk {product['name']} dari {start_date} sampai {end_date}",
+                notification_type="promo"
+            )
+        
         print("\n✅ Diskon berhasil ditambahkan!")
         print(f"Produk: {product['name']}")
         print(f"Diskon: {discount}%")
@@ -2579,198 +2708,6 @@ def lihat_promo():
         if 'connection' in locals():
             cursor.close()
             connection.close()
-
-# Update checkout_trolley to include discounts
-def checkout_trolley(user_id):
-    try:
-        connection = create_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Get items in trolley with product details and active discounts
-        cursor.execute("""
-            SELECT t.*, p.name, p.price, p.stock, s.store_name,
-                   d.discount_id, d.discount_percentage
-            FROM trolley t
-            JOIN products p ON t.product_id = p.product_id
-            JOIN seller s ON p.seller_id = s.seller_id
-            LEFT JOIN discounts d ON p.product_id = d.product_id 
-                AND CURDATE() BETWEEN d.start_date AND d.end_date
-            WHERE t.user_id = %s
-        """, (user_id,))
-        items = cursor.fetchall()
-        
-        if not items:
-            print("❌ Trolley kosong!")
-            return
-            
-        # Group items by seller
-        sellers = {}
-        for item in items:
-            if item['store_name'] not in sellers:
-                sellers[item['store_name']] = []
-            sellers[item['store_name']].append(item)
-            
-        # Display items and calculate total
-        print("\n🛒 Checkout Trolley:")
-        total_price = 0
-        total_discount = 0
-        
-        for store_name, store_items in sellers.items():
-            print(f"\n📍 Toko: {store_name}")
-            store_total = 0
-            
-            for item in store_items:
-                # Check stock
-                if item['quantity'] > item['stock']:
-                    print(f"❌ Stok {item['name']} tidak mencukupi!")
-                    return
-                    
-                # Calculate price with discount if available
-                item_price = item['price'] * item['quantity']
-                discounted_price = item_price
-                
-                if item['discount_id']:
-                    discount = item_price * (item['discount_percentage'] / 100)
-                    discounted_price = item_price - discount
-                    
-                    print(f"\n{item['name']} ({item['quantity']}x)")
-                    print(f"Harga Asli: Rp {item_price:,.2f}")
-                    print(f"Diskon: {item['discount_percentage']}%")
-                    print(f"Harga Setelah Diskon: Rp {discounted_price:,.2f}")
-                    print(f"Hemat: Rp {(item_price - discounted_price):,.2f}")
-                else:
-                    print(f"\n{item['name']} ({item['quantity']}x)")
-                    print(f"Harga: Rp {item_price:,.2f}")
-                
-                store_total += discounted_price
-                total_discount += (item_price - discounted_price)
-                
-            print(f"\nSubtotal {store_name}: Rp {store_total:,.2f}")
-            total_price += store_total
-            
-        print("\n💰 Total Belanja:")
-        print(f"Total Harga: Rp {(total_price + total_discount):,.2f}")
-        print(f"Total Diskon: Rp {total_discount:,.2f}")
-        print(f"Total Pembayaran: Rp {total_price:,.2f}")
-        
-        # Confirm order
-        confirm = input("\nLanjutkan checkout? (y/n): ")
-        if confirm.lower() != 'y':
-            return
-            
-        # Process payment
-        payment_method = None
-        while payment_method not in ['1', '2', '3']:
-            print("\nMetode Pembayaran:")
-            print("1. Transfer Bank")
-            print("2. E-Wallet")
-            print("3. COD (Cash On Delivery)")
-            payment_method = input("Pilih metode pembayaran (1-3): ")
-            
-        payment_methods = {
-            '1': 'Transfer Bank',
-            '2': 'E-Wallet',
-            '3': 'COD'
-        }
-        
-        # Create order
-        cursor.execute("""
-            INSERT INTO orders (user_id, total_price, order_date)
-            VALUES (%s, %s, NOW())
-        """, (user_id, total_price))
-        order_id = cursor.lastrowid
-        
-        # Create payment record
-        cursor.execute("""
-            INSERT INTO payment (order_id, payment_method, payment_status, payment_date)
-            VALUES (%s, %s, 'success', NOW())
-        """, (order_id, payment_methods[payment_method]))
-        
-        # Update product stock and clear trolley
-        for item in items:
-            # Update stock
-            cursor.execute("""
-                UPDATE products 
-                SET stock = stock - %s 
-                WHERE product_id = %s
-            """, (item['quantity'], item['product_id']))
-            
-            # Clear item from trolley
-            cursor.execute("""
-                DELETE FROM trolley 
-                WHERE trolley_id = %s
-            """, (item['trolley_id'],))
-            
-        connection.commit()
-        print("\n✅ Pesanan berhasil dibuat!")
-        print(f"Order ID: {order_id}")
-        print(f"Total Pembayaran: Rp {total_price:,.2f}")
-        print(f"Metode Pembayaran: {payment_methods[payment_method]}")
-        print("Status: Pembayaran Berhasil")
-        
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        if 'connection' in locals():
-            connection.rollback()
-    finally:
-        if 'connection' in locals():
-            cursor.close()
-            connection.close()
-
-# Menu Seller
-def menu_seller(user_id):
-    while True:
-        print("\n===== MENU UTAMA SELLER =====")
-        print("1. Menu Produk")
-        print("2. Menu Kategori")
-        print("3. Menu Profil")
-        print("4. Menu Review")
-        print("5. Menu Promo")
-        print("6. Logout")
-
-        pilihan = input("Pilih menu (1-6): ")
-
-        if pilihan == '1':
-            menu_produk_seller(user_id)
-        elif pilihan == '2':
-            menu_kategori()
-        elif pilihan == '3':
-            menu_profil_seller(user_id)
-        elif pilihan == '4':
-            menu_review_seller(user_id)
-        elif pilihan == '5':
-            menu_promo_seller(user_id)
-        elif pilihan == '6':
-            print("🔒 Logout berhasil.\n")
-            break
-        else:
-            print("❌ Pilihan tidak valid!")
-
-# Menu Customer
-def menu_customer(user_id):
-    while True:
-        print("\n===== MENU UTAMA CUSTOMER =====")
-        print("1. Menu Produk")
-        print("2. Menu Trolley")
-        print("3. Menu Profil")
-        print("4. Promo & Diskon")
-        print("5. Logout")
-
-        pilihan = input("Pilih menu (1-5): ")
-
-        if pilihan == '1':
-            menu_produk(user_id)
-        elif pilihan == '2':
-            menu_trolley(user_id)
-        elif pilihan == '3':
-            menu_profil(user_id)
-        elif pilihan == '4':
-            lihat_promo()
-        elif pilihan == '5':
-            print("🔒 Logout berhasil.\n")
-            break
-        else:
-            print("❌ Pilihan tidak valid!")
 
 # Menu Utama (Login dan Register)
 def main_menu():
